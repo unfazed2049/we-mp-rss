@@ -9,6 +9,7 @@ import base64
 import re
 from datetime import datetime
 from core.config import cfg
+#import traceback
 
 class WXArticleFetcher:
     """微信公众号文章获取器
@@ -92,6 +93,10 @@ class WXArticleFetcher:
             biz_match = re.search(r'window\.__biz=([^&]+)', page_source)
             if biz_match:
                 return biz_match.group(1)
+
+            biz_match = self.driver.execute_script('return window.biz')
+            if biz_match:
+                return biz_match
                 
             return ""
             
@@ -209,7 +214,7 @@ class WXArticleFetcher:
                 raise Exception("违规无法查看")
             # 等待关键元素加载
             wait.until(
-                EC.presence_of_element_located((By.CSS_SELECTOR, "#activity-detail"))
+                EC.presence_of_element_located((By.CSS_SELECTOR, "#js_article"))
             )
             # print(body)
              # 等待页面加载完成，并查找 meta[property="og:title"]
@@ -221,8 +226,8 @@ class WXArticleFetcher:
             title = og_title.get_attribute("content")
             self.export_to_pdf(f"./data/{title}.pdf")
             author = driver.find_element(
-                By.CSS_SELECTOR, "#meta_content .rich_media_meta_text"
-            ).text.strip()
+                By.XPATH, '//meta[@property="og:article:author"]'
+            ).get_attribute('content').strip()
             
             publish_time_str = driver.find_element(
                 By.CSS_SELECTOR, "#publish_time"
@@ -254,19 +259,32 @@ class WXArticleFetcher:
             # raise Exception(f"文章内容获取失败: {str(e)}")
             print(f"文章内容获取失败: {str(e)}")
             print_warning(f"\n\n{body}")
+            #traceback.print_exc()
             # raise
 
         try:
             # 等待关键元素加载
-            ele_logo =wait.until(
-                EC.presence_of_element_located((By.CLASS_NAME, "wx_follow_avatar"))
-            )
+            #ele_logo =wait.until(
+            #    EC.presence_of_element_located((By.CLASS_NAME, "wx_follow_avatar"))
+            #)
             # 获取<img>标签的src属性
-            logo_src = ele_logo.find_element(By.TAG_NAME, 'img').get_attribute('src')
+            #logo_src = ele_logo.find_element(By.TAG_NAME, 'img').get_attribute('src')
+            logo_xpath = "//span[@class='wx_follow_avatar'][1]/img"
+            wait.until(
+                lambda driver: driver.find_element(By.XPATH, logo_xpath).get_attribute('src')
+                and not driver.find_element(By.XPATH, logo_xpath).get_attribute('src').startswith('data:image')
+            )
+
+            logo_src = driver.find_element(By.XPATH, logo_xpath).get_attribute('src')
 
             # ele_name=driver.find_element((By.CLASS_NAME, "js_wx_follow_nickname"))
-            title=driver.execute_script('return $("#js_wx_follow_nickname").text()')
+            #title=driver.execute_script('return $("#js_wx_follow_nickname").text()')
             # title= ele_name.text
+            title_elem = wait.until(
+                EC.presence_of_element_located((By.ID, "js_wx_follow_nickname"))
+            )
+            title = title_elem.text
+            
             info["mp_info"]={
                 "mp_name":title,
                 "logo":logo_src,
@@ -275,6 +293,7 @@ class WXArticleFetcher:
             info["mp_id"]= "MP_WXS_"+base64.b64decode(info["mp_info"]["biz"]).decode("utf-8")
         except Exception as e:
             print_error(f"获取公众号信息失败: {str(e)}")   
+            #traceback.print_exc()
             pass
         self.Close()
         return info
